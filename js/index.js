@@ -41,8 +41,7 @@ const quarters = {
 const fetchTodaysGames = async () => {
   const splitDate = new Date().toLocaleString().split(',')[0].split('/')
   if (splitDate[0].length == 1) splitDate[0] = '0' + splitDate[0];
-  // const res = await fetch(`https://data.nba.net/prod/v2/${splitDate[2]}${splitDate[0]}${splitDate[1]}/scoreboard.json`);
-  const res = await fetch(`https://data.nba.net/prod/v2/20220323/scoreboard.json`);
+  const res = await fetch(`https://data.nba.net/prod/v2/${splitDate[2]}${splitDate[0]}${splitDate[1]}/scoreboard.json`);
   const { Message: error, games } = await res.json();
   return res.ok ? { games } : { error };
 }
