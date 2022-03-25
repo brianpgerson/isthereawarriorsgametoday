@@ -38,12 +38,29 @@ const quarters = {
   4: '4th'
 }
 
+const scheduleCache = {}
+
 const fetchTodaysGames = async () => {
   const splitDate = new Date().toLocaleString().split(',')[0].split('/')
   if (splitDate[0].length == 1) splitDate[0] = '0' + splitDate[0];
   const res = await fetch(`https://data.nba.net/prod/v2/${splitDate[2]}${splitDate[0]}${splitDate[1]}/scoreboard.json`);
   const { Message: error, games } = await res.json();
   return res.ok ? { games } : { error };
+}
+
+const fetchDubsSchedule = async () => {
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const thisMonth = now.getMonth();
+  const useThisYear = thisMonth <= 11 && thisMonth >=9;
+
+  const res = await fetch(`https://data.nba.net/prod/v1/${useThisYear ? thisYear : thisYear - 1}/teams/1610612744/schedule.json`);
+  if (!res.ok) {
+    console.error('error fetching GSW schedule');
+    return {};
+  }
+  const { league: { standard } } = await res.json();
+  return { schedule: standard }
 }
 
 const findWarriorsGame = (games) => games.find(g => g.gameUrlCode.includes('GSW'));
@@ -54,17 +71,30 @@ const handleError = (error) => {
 }
 
 
-const updateNoGame = () => {
+const updateNoGame = (schedule) => {
+  const answer = document.querySelector('#answer');
   const lede = document.querySelector('#lede');
-  lede.innerText = 'No, the Warriors do not play today.';
+  answer.innerText = 'No, the Warriors do not play today.';
   document.querySelector('table').setAttribute('class', 'hide')
+
+  if (!schedule) return;
+
+  const now = new Date();
+  const nextGame = schedule.find(g => now.getTime() < new Date(g.startTimeUTC).getTime())
+  const { isHomeTeam, gameUrlCode, startTimeUTC } = nextGame;
+  
+  const localStartTime = new Date(startTimeUTC)
+  const dateString = localStartTime.toLocaleDateString();
+  const timeString = localStartTime.toLocaleTimeString().split(':00 ').join('').toLocaleLowerCase();
+  const oppTeam = codesToNames[gameUrlCode.split('/')[1].split('GSW').filter(s => !!s)[0]];
+  lede.innerText = `The next scheduled game is on ${dateString} ${isHomeTeam ? 'hosting' : '@'} the ${oppTeam} at ${timeString}`
+  answer.setAttribute('class', isHomeTeam ? 'dubs-blue' : 'dubs-yellow')
 }
 
-const handleGame = (games) => {
+const handleGame = (games, schedule) => {
   const dubsGame = findWarriorsGame(games);
-  console.log(dubsGame)
   if (!dubsGame) {
-    return updateNoGame()
+    return updateNoGame(schedule)
   }
   const lede = document.querySelector('#lede');
   const mainAnswer = document.querySelector('#main-answer');
@@ -164,11 +194,10 @@ const handleGame = (games) => {
 
 window.onload = async () => {
   const { games, error } = await fetchTodaysGames();
-  console.log('games! ', games);
-  console.log('error! ', error);
-
   if (error) {
     return handleError(error)
   } 
-  handleGame(games)
+
+  const { schedule } = await fetchDubsSchedule();
+  handleGame(games, schedule)
 };
