@@ -38,14 +38,13 @@ const quarters = {
   4: '4th'
 }
 
-const EST = new Intl.DateTimeFormat('en-US', {
-  timeZone: "America/New_York", year: 'numeric', month:  '2-digit', day:  "2-digit",
+const PST = new Intl.DateTimeFormat('en-US', {
+  timeZone: "America/Los_Angeles", year: 'numeric', month:  '2-digit', day:  "2-digit",
 });
 
 const fetchTodaysGames = async () => {
-  const todayEST = EST.format(new Date()).split('/');
-  const res = await fetch(`https://data.nba.net/prod/v2/${todayEST[2]}${todayEST[0]}${todayEST[1]}/scoreboard.json`);
-  // const res = await fetch(`https://data.nba.net/prod/v2/20220324/scoreboard.json`);
+  const todayPST = PST.format(new Date()).split('/');
+  const res = await fetch(`https://data.nba.net/prod/v2/${todayPST[2]}${todayPST[0]}${todayPST[1]}/scoreboard.json`);
   const { Message: error, games } = await res.json();
   return res.ok ? { games } : { error };
 }
