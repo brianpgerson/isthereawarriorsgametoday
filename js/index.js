@@ -38,12 +38,14 @@ const quarters = {
   4: '4th'
 }
 
-const scheduleCache = {}
+const EST = new Intl.DateTimeFormat('en-US', {
+  timeZone: "America/New_York", year: 'numeric', month:  '2-digit', day:  "2-digit",
+});
 
 const fetchTodaysGames = async () => {
-  const splitDate = new Date().toLocaleString().split(',')[0].split('/')
-  if (splitDate[0].length == 1) splitDate[0] = '0' + splitDate[0];
-  const res = await fetch(`https://data.nba.net/prod/v2/${splitDate[2]}${splitDate[0]}${splitDate[1]}/scoreboard.json`);
+  const todayEST = EST.format(new Date()).split('/');
+  const res = await fetch(`https://data.nba.net/prod/v2/${todayEST[2]}${todayEST[0]}${todayEST[1]}/scoreboard.json`);
+  // const res = await fetch(`https://data.nba.net/prod/v2/20220324/scoreboard.json`);
   const { Message: error, games } = await res.json();
   return res.ok ? { games } : { error };
 }
@@ -53,8 +55,8 @@ const fetchDubsSchedule = async () => {
   const thisYear = now.getFullYear();
   const thisMonth = now.getMonth();
   const useThisYear = thisMonth <= 11 && thisMonth >=9;
-
   const res = await fetch(`https://data.nba.net/prod/v1/${useThisYear ? thisYear : thisYear - 1}/teams/1610612744/schedule.json`);
+
   if (!res.ok) {
     console.error('error fetching GSW schedule');
     return {};
@@ -67,28 +69,79 @@ const findWarriorsGame = (games) => games.find(g => g.gameUrlCode.includes('GSW'
 
 const handleError = (error) => {
   const errDiv = document.querySelector('#error');
-  errDiv.innerText = error;
+  errDiv.innerText = `Something went wrong! Error: ${error}`;
 }
 
+const updateElement = (selector, text, attributes) => {
+  const el = document.querySelector(selector);
+  el.innerText = text;
+  for (const key in attributes) {
+    if (attributes.hasOwnProperty(key)) {
+      el.setAttribute(key, attributes[key])
+    }
+  }
+}
+
+const updateBroadcasts = ({ broadcasters: { hTeam, vTeam }}) => {
+  const el = document.querySelector("#broadcasts");
+  const broadcasts = [...hTeam, ...vTeam]
+  const header = document.createElement('div')
+  header.innerText = 'BROADCASTS:'
+  el.appendChild(header)
+  
+  for (const { shortName, longName } of broadcasts) {
+    const bc = document.createElement('div')
+    bc.innerText = `${shortName} - ${longName}`
+    el.appendChild(bc)
+  }
+}
 
 const updateNoGame = (schedule) => {
-  const answer = document.querySelector('#answer');
-  const lede = document.querySelector('#lede');
-  answer.innerText = 'No, the Warriors do not play today.';
   document.querySelector('table').setAttribute('class', 'hide')
+  const noText = 'No, the Warriors do not play today.'
+  if (!schedule) return updateElement('#answer', noText);
 
-  if (!schedule) return;
+  const nextGame = schedule.find(g => new Date().getTime() < new Date(g.startTimeUTC).getTime())
+  if (!nextGame) return;
 
-  const now = new Date();
-  const nextGame = schedule.find(g => now.getTime() < new Date(g.startTimeUTC).getTime())
   const { isHomeTeam, gameUrlCode, startTimeUTC } = nextGame;
-  
-  const localStartTime = new Date(startTimeUTC)
-  const dateString = localStartTime.toLocaleDateString();
-  const timeString = localStartTime.toLocaleTimeString().split(':00 ').join('').toLocaleLowerCase();
+  const start = new Date(startTimeUTC)
+  const dateString = start.toLocaleDateString();
+  const timeString = start.toLocaleTimeString().split(':00 ').join('').toLocaleLowerCase();
   const oppTeam = codesToNames[gameUrlCode.split('/')[1].split('GSW').filter(s => !!s)[0]];
-  lede.innerText = `The next scheduled game is on ${dateString} ${isHomeTeam ? 'hosting' : '@'} the ${oppTeam} at ${timeString}`
-  answer.setAttribute('class', isHomeTeam ? 'dubs-blue' : 'dubs-yellow')
+  const ledeText = `The next scheduled game is on ${dateString} ${isHomeTeam ? 'hosting' : '@'} the ${oppTeam} at ${timeString}`
+  updateElement('#lede', ledeText);
+  updateElement('#answer', noText, { class: isHomeTeam ? 'dubs-blue' : 'dubs-yellow' });
+}
+
+const createTeamCol = (row, teamCode, wins, losses) => {
+  let td = document.createElement('td')
+  td = row.insertCell(-1);
+  const team = document.createElement('span')
+  team.innerText = teamCode;
+  const wl = document.createElement('span')
+  wl.innerText = ` (${wins}-${losses})`
+  td.appendChild(team)
+  td.appendChild(wl)
+  td.setAttribute('class', 'long-cell')
+}
+
+const addTDToRow = (row, val) => {
+  let td = document.createElement('td');
+  td = row.insertCell(-1);
+  td.innerText = val;
+}
+
+const addBlankBoxScoreColumns = () => {
+  const headersRow = document.querySelector('tbody').children[0]
+  const homeLineRow = document.querySelector('tbody').children[1]
+  const awayLineRow = document.querySelector('tbody').children[2]
+  
+  for (let i = 0; i < 5; i++) {
+    addTDToRow(headersRow, i == 4 ? 'T' : i)
+    addTDToRow(homeLineRow, '-')
+    addTDToRow(awayLineRow, '-')
+  }
 }
 
 const handleGame = (games, schedule) => {
@@ -96,9 +149,6 @@ const handleGame = (games, schedule) => {
   if (!dubsGame) {
     return updateNoGame(schedule)
   }
-  const lede = document.querySelector('#lede');
-  const mainAnswer = document.querySelector('#main-answer');
-  const answerDetails = document.querySelector('#answer-details');
 
   const { 
     startTimeUTC, 
@@ -109,86 +159,49 @@ const handleGame = (games, schedule) => {
     period: { current, isHalftime, isEndOfPeriod },
     hTeam: { triCode: homeTeamCode, win: homeWins, loss: homeLosses, linescore: homeLineScore, score: homeScore },
     vTeam: { triCode: awayTeamCode, win: awayWins, loss: awayLosses, linescore: awayLineScore, score: awayScore },
+    watch: { broadcast },
   } = dubsGame;
+
   const isHomeGame = homeTeamCode === 'GSW';
   const alreadyStarted = !!hours && !!minutes;
   const alreadyEnded = !!endTimeUTC;
-  const localStartTime = new Date(startTimeUTC)
-  const timeString = localStartTime.toLocaleTimeString().split(':00 ').join('').toLocaleLowerCase();
-
+  const timeString = new Date(startTimeUTC).toLocaleTimeString().split(':00 ').join('').toLocaleLowerCase();
   const dubs = isHomeGame ? codesToNames[homeTeamCode] : codesToNames[awayTeamCode];
   const otherTeam = isHomeGame ? codesToNames[awayTeamCode] : codesToNames[homeTeamCode];
-  lede.innerText = `The ${dubs} ${alreadyEnded ? 'played' : alreadyStarted ? 'are playing' : 'play'} the ${otherTeam} at ${timeString}`
-  mainAnswer.innerText = `Yes, ${isHomeGame ? 'at home' : 'away'}`
-  mainAnswer.setAttribute('class', isHomeGame ? 'dubs-blue' : 'dubs-yellow')
-  answerDetails.innerText = ` at ${arenaName}`
+  const ledeText = `The ${dubs} ${alreadyEnded ? 'played' : alreadyStarted ? 'started playing' : 'play'} the ${otherTeam} at ${timeString}`;
+  const mainAnswerText = `Yes, ${isHomeGame ? 'at home' : 'away'}`
+
+  updateElement('#lede', ledeText);
+  updateElement('#main-answer', mainAnswerText, { class: isHomeGame ? 'dubs-blue' : 'dubs-yellow' });
+  updateElement('#answer-details', ` at ${arenaName}`);
+  updateBroadcasts(broadcast);
 
   const headersRow = document.querySelector('tbody').children[0]
   const homeLineRow = document.querySelector('tbody').children[1]
   const awayLineRow = document.querySelector('tbody').children[2]
-
-  let homeTd = document.createElement('td')
-  let awayTd = document.createElement('td')
-  homeTd = homeLineRow.insertCell(-1);
-  awayTd = awayLineRow.insertCell(-1);
-  const homeTeam = document.createElement('span')
-  const awayTeam = document.createElement('span')
-  homeTeam.innerText = homeTeamCode;
-  awayTeam.innerText = awayTeamCode;
-  const homeWL = document.createElement('span')
-  const awayWL = document.createElement('span')
-  homeWL.innerText = ` (${homeWins}-${homeLosses})`
-  awayWL.innerText = ` (${awayWins}-${awayLosses})`
-  homeTd.appendChild(homeTeam)
-  homeTd.appendChild(homeWL)
-  homeTd.setAttribute('class', 'long-cell')
-  awayTd.appendChild(awayTeam)
-  awayTd.appendChild(awayWL)
-  awayTd.setAttribute('class', 'long-cell')
+  createTeamCol(homeLineRow, homeTeamCode, homeWins, homeLosses);
+  createTeamCol(awayLineRow, awayTeamCode, awayWins, awayLosses);
 
   if (!alreadyStarted) {
-    for (let i = 0; i < 5; i++) {
-      let headerTd = document.createElement('td');
-      let homeTd = document.createElement('td');
-      let awayTd = document.createElement('td');
-      headerTd = headersRow.insertCell(-1);
-      homeTd = homeLineRow.insertCell(-1);
-      awayTd = awayLineRow.insertCell(-1);
-      headerTd.innerText = i == 4 ? 'T' : i;  
-      homeTd.innerText = '-'  
-      awayTd.innerText = '-'  
-    }
+    addBlankBoxScoreColumns()
   } else {
     const qtrText = isHalftime ? 'HT' 
       : isEndOfPeriod ? `End ${quarters[current]}` 
       : alreadyEnded ? 'FT' 
       : alreadyStarted ? `${clock} in ${quarters[current]}` : '';
-
     headersRow.children[0].innerText = qtrText;
     
     for (let i = 0; i < homeLineScore.length; i++) {
-      let { score: homeScore } = homeLineScore[i];
-      let { score: awayScore } = awayLineScore[i];
-      let headerTd = document.createElement('td');
-      let homeTd = document.createElement('td');
-      let awayTd = document.createElement('td');
-      headerTd = headersRow.insertCell(-1);
-      homeTd = homeLineRow.insertCell(-1);
-      awayTd = awayLineRow.insertCell(-1);
-      headerTd.innerText = i;  
-      homeTd.innerText = homeScore ? homeScore : '-'; 
-      awayTd.innerText = awayScore ? awayScore : '-';
+      let { score: homeQScore } = homeLineScore[i];
+      let { score: awayQScore } = awayLineScore[i];
+      addTDToRow(headersRow, i);
+      addTDToRow(homeLineRow, homeQScore ? homeQScore : '-');
+      addTDToRow(awayLineRow, awayQScore ? awayQScore : '-');
     }
 
-    let headerTd = document.createElement('td');
-    let homeTd = document.createElement('td');
-    let awayTd = document.createElement('td');
-    headerTd = headersRow.insertCell(-1);
-    homeTd = homeLineRow.insertCell(-1);
-    awayTd = awayLineRow.insertCell(-1);
-    headerTd.innerText = 'T'
-    homeTd.innerText = homeScore;
-    awayTd.innerText = awayScore;
+    addTDToRow(headersRow, 'T');
+    addTDToRow(homeLineRow, homeScore);
+    addTDToRow(awayLineRow, awayScore);
   }
 }
 
