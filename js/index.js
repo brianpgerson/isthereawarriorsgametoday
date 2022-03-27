@@ -137,7 +137,7 @@ const addBlankBoxScoreColumns = () => {
   const awayLineRow = document.querySelector('tbody').children[2]
   
   for (let i = 0; i < 5; i++) {
-    addTDToRow(headersRow, i == 4 ? 'T' : i)
+    addTDToRow(headersRow, i == 4 ? 'T' : i + 1)
     addTDToRow(homeLineRow, '-')
     addTDToRow(awayLineRow, '-')
   }
@@ -193,7 +193,7 @@ const handleGame = (games, schedule) => {
     for (let i = 0; i < homeLineScore.length; i++) {
       let { score: homeQScore } = homeLineScore[i];
       let { score: awayQScore } = awayLineScore[i];
-      addTDToRow(headersRow, i);
+      addTDToRow(headersRow, i + 1);
       addTDToRow(homeLineRow, homeQScore ? homeQScore : '-');
       addTDToRow(awayLineRow, awayQScore ? awayQScore : '-');
     }
